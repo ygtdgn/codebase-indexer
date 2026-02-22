@@ -122,7 +122,31 @@ fail()    { echo -e "${RED}✖${RESET}  $1"; }
 
 print_banner
 
-# ── 2. Prerequisite checks ──────────────────────────────────
+# ── 2. Service location ─────────────────────────────────────
+
+echo -e "${BOLD}🖥️  Where are your services (Ollama & Qdrant) running?${RESET}"
+
+echo "   1) On this machine (local setup)"
+
+echo "   2) On a remote machine (I'll provide URLs)"
+
+echo -en "   > "
+
+prompt_read SERVICE_LOCATION
+
+SERVICE_LOCATION="${SERVICE_LOCATION:-1}"
+
+REMOTE_MODE=false
+
+if [ "$SERVICE_LOCATION" = "2" ]; then
+
+REMOTE_MODE=true
+
+fi
+
+echo ""
+
+# ── 3. Prerequisite checks ──────────────────────────────────
 
 MISSING=0
 
@@ -161,6 +185,10 @@ echo -e "     ${DIM}Install from: https://nodejs.org${RESET}"
 MISSING=1
 
 fi
+
+# Docker & Ollama checks — only for local mode
+
+if ! $REMOTE_MODE; then
 
 # Docker
 
@@ -206,6 +234,12 @@ MISSING=1
 
 fi
 
+else
+
+info "Skipping Docker & Ollama checks (remote mode)"
+
+fi
+
 echo ""
 
 if [ "$MISSING" -ne 0 ]; then
@@ -225,6 +259,50 @@ fail "Setup cancelled. Install the missing prerequisites and try again."
 exit 1
 
 fi
+
+echo ""
+
+fi
+
+# ── 3b. Remote URLs (only for remote mode) ──────────────────
+
+REMOTE_OLLAMA_URL=""
+
+REMOTE_QDRANT_URL=""
+
+if $REMOTE_MODE; then
+
+echo -e "${BOLD}🌐 Enter your remote service URLs${RESET}"
+
+echo ""
+
+while [ -z "$REMOTE_OLLAMA_URL" ]; do
+
+echo -en "   Ollama URL ${DIM}(e.g. http://192.168.1.100:11434)${RESET}: "
+
+prompt_read REMOTE_OLLAMA_URL
+
+if [ -z "$REMOTE_OLLAMA_URL" ]; then
+
+warn "Ollama URL is required."
+
+fi
+
+done
+
+while [ -z "$REMOTE_QDRANT_URL" ]; do
+
+echo -en "   Qdrant URL ${DIM}(e.g. http://192.168.1.100:6333)${RESET}: "
+
+prompt_read REMOTE_QDRANT_URL
+
+if [ -z "$REMOTE_QDRANT_URL" ]; then
+
+warn "Qdrant URL is required."
+
+fi
+
+done
 
 echo ""
 
@@ -324,7 +402,25 @@ COLLECTION_NAME=""
 
 CUSTOM_CONFIG=false
 
+# Pre-fill URLs from remote mode
+
+if $REMOTE_MODE; then
+
+OLLAMA_URL="$REMOTE_OLLAMA_URL"
+
+QDRANT_URL="$REMOTE_QDRANT_URL"
+
+CUSTOM_CONFIG=true
+
+fi
+
 echo -e "${BOLD}⚙️  Do you want to customize connection settings?${RESET} ${DIM}(y/N)${RESET}"
+
+if $REMOTE_MODE; then
+
+echo -e "   ${DIM}(Ollama & Qdrant URLs are already set from remote config)${RESET}"
+
+fi
 
 echo -en "   > "
 
@@ -340,6 +436,8 @@ echo -e "   ${DIM}Press Enter to keep the default value.${RESET}"
 
 echo ""
 
+if ! $REMOTE_MODE; then
+
 echo -en "   Ollama URL ${DIM}(default: http://localhost:11434)${RESET}: "
 
 prompt_read OLLAMA_URL
@@ -351,6 +449,14 @@ echo -en "   Qdrant URL ${DIM}(default: http://localhost:6333)${RESET}: "
 prompt_read QDRANT_URL
 
 QDRANT_URL="${QDRANT_URL:-}"
+
+else
+
+echo -e "   Ollama URL: ${GREEN}${OLLAMA_URL}${RESET} ${DIM}(from remote config)${RESET}"
+
+echo -e "   Qdrant URL: ${GREEN}${QDRANT_URL}${RESET} ${DIM}(from remote config)${RESET}"
+
+fi
 
 echo -en "   Embedding Model ${DIM}(default: qwen3-embedding:0.6b)${RESET}: "
 
@@ -436,7 +542,9 @@ INDEX_FLAGS="$INDEX_FLAGS --setup-globally"
 
 fi
 
-# ── 5. Run init ──────────────────────────────────────────────
+# ── 5. Run init (local mode only) ────────────────────────────
+
+if ! $REMOTE_MODE; then
 
 echo -e "${BOLD}Step 1/2:${RESET} Setting up Qdrant & checking Ollama..."
 
@@ -450,9 +558,19 @@ npx codebase-indexer init $INIT_FLAGS
 
 echo ""
 
+fi
+
 # ── 6. Run index ─────────────────────────────────────────────
 
+if $REMOTE_MODE; then
+
+echo -e "${BOLD}Step 1/1:${RESET} Indexing ${INDEX_DIR}..."
+
+else
+
 echo -e "${BOLD}Step 2/2:${RESET} Indexing ${INDEX_DIR}..."
+
+fi
 
 echo -e "${DIM}  → npx codebase-indexer index ${INDEX_DIR}${INDEX_FLAGS}${RESET}"
 
@@ -541,6 +659,16 @@ print_mascot "success" "All done! Your codebase is indexed."
 echo -e "${BOLD}  Setup Summary${RESET}"
 
 echo -e "  ─────────────────────────────────────────"
+
+if $REMOTE_MODE; then
+
+echo -e "  Mode:          ${CYAN}Remote${RESET}"
+
+else
+
+echo -e "  Mode:          ${CYAN}Local${RESET}"
+
+fi
 
 echo -e "  Directory:     ${GREEN}${INDEX_DIR}${RESET}"
 
