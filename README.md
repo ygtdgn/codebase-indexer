@@ -22,13 +22,29 @@ A semantic codebase indexer that chunks your source code, generates embeddings v
 
 ## Quick Start
 
-### Prerequisites
+### One-Line Install
+
+The fastest way to get started — checks prerequisites, sets up infrastructure, indexes your project, and configures integrations interactively:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ygtdgn/codebase-indexer/main/install.sh)
+```
+
+Or equivalently:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ygtdgn/codebase-indexer/main/install.sh | bash
+```
+
+### Manual Setup
+
+#### Prerequisites
 
 - [Node.js](https://nodejs.org) >= 18
 - [Docker](https://www.docker.com) (for Qdrant)
 - [Ollama](https://ollama.com) running locally
 
-### 1. Set up infrastructure
+#### 1. Set up infrastructure
 
 ```bash
 npx codebase-indexer init
@@ -36,19 +52,19 @@ npx codebase-indexer init
 
 This starts a Qdrant container via Docker Compose, verifies your Ollama connection, and pulls the embedding model if needed.
 
-### 2. Index your project
+#### 2. Index your project
 
 ```bash
 npx codebase-indexer index ./your-project
 ```
 
-### 3. Search
+#### 3. Search
 
 ```bash
 npx codebase-indexer search "authentication middleware"
 ```
 
-### 4. Use with Claude Code or Codex
+#### 4. Use with Claude Code or Codex
 
 ```bash
 # Set up Claude Code integration (writes CLAUDE.md + .mcp.json)
