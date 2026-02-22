@@ -1,8 +1,10 @@
 import { readFile, stat } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import path from "node:path";
 import { glob } from "glob";
 import ignore, { type Ignore } from "ignore";
 import type { Config } from "../config/config.js";
+import { warn } from "./logger.js";
 
 export async function loadGitignore(directory: string): Promise<Ignore> {
   const ig = ignore();
@@ -18,11 +20,58 @@ export async function loadGitignore(directory: string): Promise<Ignore> {
   return ig;
 }
 
+function tryGitLsFiles(directory: string, extensions: Set<string>): string[] | null {
+  try {
+    const output = execSync("git ls-files --cached --others --exclude-standard", {
+      cwd: directory,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output
+      .split("\n")
+      .filter((f) => f && extensions.has(path.extname(f).toLowerCase()));
+  } catch {
+    return null; // Not a git repo or git not available
+  }
+}
+
 export async function discoverFiles(
   directory: string,
   config: Config,
 ): Promise<string[]> {
   const absDir = path.resolve(directory);
+  const extensionSet = new Set(config.codeExtensions);
+  const ignoreFileSet = new Set(config.ignoreFiles);
+
+  // Try git ls-files first (handles nested .gitignore automatically)
+  const gitFiles = tryGitLsFiles(absDir, extensionSet);
+
+  if (gitFiles) {
+    const results: string[] = [];
+
+    for (const file of gitFiles) {
+      const basename = path.basename(file);
+      if (ignoreFileSet.has(basename)) continue;
+
+      // Check ignoreDirs
+      const parts = file.split(path.sep);
+      if (parts.some((p) => config.ignoreDirs.includes(p))) continue;
+
+      const absPath = path.join(absDir, file);
+      try {
+        const s = await stat(absPath);
+        if (s.size <= config.maxFileSize) {
+          results.push(file);
+        }
+      } catch {
+        warn(`Skipping inaccessible file: ${file}`);
+      }
+    }
+
+    return results.sort();
+  }
+
+  // Fallback: glob + ignore
   const ig = await loadGitignore(absDir);
 
   // Add configured ignore dirs to ignore rules
@@ -44,11 +93,14 @@ export async function discoverFiles(
     absolute: false,
   });
 
-  // Filter with gitignore and max file size
+  // Filter with gitignore, ignoreFiles, and max file size
   const results: string[] = [];
 
   for (const file of files) {
     if (ig.ignores(file)) continue;
+
+    const basename = path.basename(file);
+    if (ignoreFileSet.has(basename)) continue;
 
     const absPath = path.join(absDir, file);
     try {
@@ -57,7 +109,7 @@ export async function discoverFiles(
         results.push(file);
       }
     } catch {
-      // Skip inaccessible files
+      warn(`Skipping inaccessible file: ${file}`);
     }
   }
 

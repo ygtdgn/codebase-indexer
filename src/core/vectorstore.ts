@@ -128,21 +128,19 @@ export class VectorStore {
       });
     }
 
-    if (filters?.filePathPrefix) {
-      must.push({
-        key: "file_path",
-        match: { text: filters.filePathPrefix },
-      });
-    }
+    // Qdrant keyword index doesn't support native prefix match,
+    // so we fetch more results and filter client-side
+    const hasPrefix = !!filters?.filePathPrefix;
+    const fetchLimit = hasPrefix ? topK * 3 : topK;
 
     const results = await this.client.search(this.collectionName, {
       vector: queryVector,
-      limit: topK,
+      limit: fetchLimit,
       with_payload: true,
       filter: must.length > 0 ? { must } : undefined,
     });
 
-    return results.map((r) => {
+    let mapped = results.map((r) => {
       const p = r.payload as unknown as PointPayload;
       return {
         score: r.score,
@@ -156,6 +154,12 @@ export class VectorStore {
         fileHash: p.file_hash,
       };
     });
+
+    if (hasPrefix) {
+      mapped = mapped.filter((r) => r.filePath.startsWith(filters!.filePathPrefix!));
+    }
+
+    return mapped.slice(0, topK);
   }
 
   async getFileHash(filePath: string): Promise<string | undefined> {

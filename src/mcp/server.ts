@@ -220,13 +220,16 @@ export async function startMcpServer(config: Config): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  // Handle cleanup
-  process.on("SIGINT", async () => {
+  // Handle graceful shutdown
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     if (watcher) await watcher.stop();
+    // Brief wait for active Qdrant writes to complete
+    await new Promise((r) => setTimeout(r, 1000));
     process.exit(0);
-  });
-  process.on("SIGTERM", async () => {
-    if (watcher) await watcher.stop();
-    process.exit(0);
-  });
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

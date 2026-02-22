@@ -5,7 +5,8 @@ import { chunkFile, type Chunk } from "./chunker.js";
 import { Embedder } from "./embedder.js";
 import { VectorStore } from "./vectorstore.js";
 import { discoverFiles, readFileContent } from "../utils/files.js";
-import { md5 } from "../utils/hash.js";
+import { fileIndexHash } from "../utils/hash.js";
+import { warn } from "../utils/logger.js";
 
 export interface IndexProgress {
   totalFiles: number;
@@ -35,6 +36,7 @@ export class Indexer {
   async indexDirectory(
     directory: string,
     onProgress?: ProgressCallback,
+    options?: { force?: boolean },
   ): Promise<IndexProgress> {
     const absDir = path.resolve(directory);
     const files = await discoverFiles(absDir, this.config);
@@ -57,15 +59,17 @@ export class Indexer {
 
         try {
           const content = await readFileContent(absPath);
-          const contentHash = md5(content);
+          const contentHash = fileIndexHash(content, this.config);
 
           // Check if file is already indexed with same hash
-          const existingHash = await this.vectorStore.getFileHash(relFile);
-          if (existingHash === contentHash) {
-            progress.skippedFiles++;
-            progress.processedFiles++;
-            onProgress?.(progress);
-            return;
+          if (!options?.force) {
+            const existingHash = await this.vectorStore.getFileHash(relFile);
+            if (existingHash === contentHash) {
+              progress.skippedFiles++;
+              progress.processedFiles++;
+              onProgress?.(progress);
+              return;
+            }
           }
 
           // Delete old chunks for this file
@@ -91,8 +95,8 @@ export class Indexer {
           progress.totalChunks += chunks.length;
           progress.processedFiles++;
           onProgress?.(progress);
-        } catch (error) {
-          // Log error but continue with other files
+        } catch (err) {
+          warn(`Failed to index ${relFile}: ${err instanceof Error ? err.message : String(err)}`);
           progress.processedFiles++;
           onProgress?.(progress);
         }
@@ -104,7 +108,7 @@ export class Indexer {
   }
 
   async indexFile(filePath: string, content: string): Promise<number> {
-    const contentHash = md5(content);
+    const contentHash = fileIndexHash(content, this.config);
 
     // Check if already indexed
     const existingHash = await this.vectorStore.getFileHash(filePath);
@@ -145,13 +149,21 @@ export class Indexer {
     chunks: Chunk[],
     fileHash: string,
   ): Promise<void> {
-    // Process in batches of batchSize
+    const batches: Chunk[][] = [];
     for (let i = 0; i < chunks.length; i += this.config.batchSize) {
-      const batch = chunks.slice(i, i + this.config.batchSize);
-      const texts = batch.map((c) => c.content);
-      const embeddings = await this.embedder.embed(texts);
-      await this.vectorStore.upsert(batch, embeddings, fileHash);
+      batches.push(chunks.slice(i, i + this.config.batchSize));
     }
+
+    const limit = pLimit(2); // Max 2 parallel batch embeddings per file
+    await Promise.all(
+      batches.map((batch) =>
+        limit(async () => {
+          const texts = batch.map((c) => c.content);
+          const embeddings = await this.embedder.embed(texts);
+          await this.vectorStore.upsert(batch, embeddings, fileHash);
+        }),
+      ),
+    );
   }
 
   async healthCheck(): Promise<{

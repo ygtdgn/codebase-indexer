@@ -81,9 +81,19 @@ volumes:
         if (!models.some((m) => m.includes(config.model.split(":")[0]))) {
           console.log(
             chalk.yellow(
-              `  Warning: Model "${config.model}" not found. Run: ollama pull ${config.model}`,
+              `  Model "${config.model}" not found. Pulling...`,
             ),
           );
+          try {
+            execSync(`ollama pull ${config.model}`, { stdio: "inherit" });
+            console.log(chalk.green(`  Model "${config.model}" pulled successfully.`));
+          } catch {
+            console.log(
+              chalk.red(
+                `  Failed to pull model. Run manually: ollama pull ${config.model}`,
+              ),
+            );
+          }
         }
       } else {
         ollamaSpinner.fail("Ollama responded with error");
@@ -108,7 +118,7 @@ volumes:
 export async function indexCommand(
   directory: string,
   config: Config,
-  options: { setupClaude?: boolean; setupCodex?: boolean; setupGlobally?: boolean } = {},
+  options: { setupClaude?: boolean; setupCodex?: boolean; setupGlobally?: boolean; force?: boolean } = {},
 ): Promise<void> {
   const absDir = path.resolve(directory);
   if (!existsSync(absDir)) {
@@ -127,7 +137,7 @@ export async function indexCommand(
 
     const progress = await indexer.indexDirectory(absDir, (p) => {
       spinner.text = formatProgress(p);
-    });
+    }, { force: options.force });
 
     spinner.succeed(
       `Indexed ${progress.processedFiles} files (${progress.totalChunks} chunks, ${progress.skippedFiles} skipped)`,

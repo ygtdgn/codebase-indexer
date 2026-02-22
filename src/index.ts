@@ -18,6 +18,7 @@ interface IndexCommandOptions {
   setupClaude?: boolean;
   setupCodex?: boolean;
   setupGlobally?: boolean;
+  force?: boolean;
 }
 
 const program = new Command();
@@ -63,6 +64,7 @@ program
     "--setup-globally",
     "Write MCP config to user-level config files instead of project-local files",
   )
+  .option("--force", "Force re-index all files, ignoring cached hashes")
   .action(async (directory: string | undefined, cmdOpts: IndexCommandOptions) => {
     const opts = program.opts();
     const dir = directory ?? opts.dir ?? ".";
@@ -79,6 +81,7 @@ program
       setupClaude: targets.includes("claude"),
       setupCodex: targets.includes("codex"),
       setupGlobally: cmdOpts.setupGlobally === true,
+      force: cmdOpts.force === true,
     });
   });
 

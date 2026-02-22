@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export interface Config {
   ollamaUrl: string;
   qdrantUrl: string;
@@ -12,6 +14,7 @@ export interface Config {
   directory: string;
   collectionName: string;
   ignoreDirs: string[];
+  ignoreFiles: string[];
   codeExtensions: string[];
 }
 
@@ -51,6 +54,22 @@ const defaults: Config = {
     ".nyc_output",
     ".turbo",
     ".cache",
+  ],
+  ignoreFiles: [
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+    "composer.lock",
+    "Gemfile.lock",
+    "poetry.lock",
+    "Pipfile.lock",
+    "Cargo.lock",
+    "go.sum",
+    "packages.lock.json",
+    "pubspec.lock",
+    "mix.lock",
+    "shrinkwrap.yaml",
   ],
   codeExtensions: [
     ".ts",
@@ -140,5 +159,13 @@ export function resolveConfig(overrides: Partial<Config> = {}): Config {
   if (process.env.EMBEDDING_DIM) envOverrides.embeddingDim = parseInt(process.env.EMBEDDING_DIM, 10);
   if (process.env.COLLECTION_NAME) envOverrides.collectionName = process.env.COLLECTION_NAME;
 
-  return { ...defaults, ...envOverrides, ...overrides };
+  const result = { ...defaults, ...envOverrides, ...overrides };
+
+  // Auto-derive collection name from directory when using the default
+  if (result.collectionName === "codebase" && result.directory !== ".") {
+    const dirName = path.basename(path.resolve(result.directory));
+    result.collectionName = `codebase-${dirName.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+  }
+
+  return result;
 }

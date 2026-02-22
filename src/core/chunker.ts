@@ -172,8 +172,9 @@ function symbolBasedChunking(
       continue;
     }
 
+    const contextPrefix = `// File: ${filePath}\n`;
     chunks.push({
-      content,
+      content: contextPrefix + content,
       filePath,
       language,
       startLine: start + 1,
@@ -193,11 +194,12 @@ function slidingWindowChunking(
   chunkSize: number,
   chunkOverlap: number,
 ): Chunk[] {
+  const contextPrefix = `// File: ${filePath}\n`;
   const fullText = lines.join("\n");
   if (fullText.length <= chunkSize) {
     return [
       {
-        content: fullText,
+        content: contextPrefix + fullText,
         filePath,
         language,
         startLine: 1,
@@ -220,7 +222,7 @@ function slidingWindowChunking(
     const endLine = startLine + (chunkText.match(/\n/g) || []).length;
 
     chunks.push({
-      content: chunkText,
+      content: contextPrefix + chunkText,
       filePath,
       language,
       startLine,
