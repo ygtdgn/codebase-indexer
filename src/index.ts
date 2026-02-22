@@ -2,13 +2,14 @@
 
 import { checkbox } from "@inquirer/prompts";
 import { Command } from "commander";
-import { resolveConfig } from "./config/config.js";
+import { resolveConfig, loadSavedConfig } from "./config/config.js";
 import {
   initCommand,
   indexCommand,
   searchCommand,
   statusCommand,
   mcpCommand,
+  configCommand,
 } from "./cli/commands.js";
 
 type SetupTarget = "claude" | "codex";
@@ -43,13 +44,14 @@ program
   .description("Set up Qdrant (Docker) and check Ollama connection")
   .action(async () => {
     const opts = program.opts();
+    const saved = await loadSavedConfig();
     const config = resolveConfig({
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
       embeddingDim: parseInt(opts.dim, 10),
       collectionName: opts.collection,
-    });
+    }, saved);
     await initCommand(config);
   });
 
@@ -69,6 +71,7 @@ program
     const opts = program.opts();
     const dir = directory ?? opts.dir ?? ".";
     const targets = await resolveSetupTargets(cmdOpts);
+    const saved = await loadSavedConfig();
     const config = resolveConfig({
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
@@ -76,7 +79,7 @@ program
       embeddingDim: parseInt(opts.dim, 10),
       collectionName: opts.collection,
       directory: dir,
-    });
+    }, saved);
     await indexCommand(dir, config, {
       setupClaude: targets.includes("claude"),
       setupCodex: targets.includes("codex"),
@@ -93,13 +96,14 @@ program
   .option("-l, --language <lang>", "Filter by language")
   .action(async (query: string, cmdOpts: { topK: string; language?: string }) => {
     const opts = program.opts();
+    const saved = await loadSavedConfig();
     const config = resolveConfig({
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
       embeddingDim: parseInt(opts.dim, 10),
       collectionName: opts.collection,
-    });
+    }, saved);
     await searchCommand(query, parseInt(cmdOpts.topK, 10), cmdOpts.language, config);
   });
 
@@ -109,20 +113,30 @@ program
   .description("Check Ollama and Qdrant status")
   .action(async () => {
     const opts = program.opts();
+    const saved = await loadSavedConfig();
     const config = resolveConfig({
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
       embeddingDim: parseInt(opts.dim, 10),
       collectionName: opts.collection,
-    });
+    }, saved);
     await statusCommand(config);
+  });
+
+// Config command
+program
+  .command("config")
+  .description("Interactively edit connection and indexing settings")
+  .action(async () => {
+    await configCommand();
   });
 
 // Default action: MCP server mode
 program.action(async () => {
   const opts = program.opts();
   const dir = opts.dir ?? ".";
+  const saved = await loadSavedConfig();
   const config = resolveConfig({
     ollamaUrl: opts.ollamaUrl,
     qdrantUrl: opts.qdrantUrl,
@@ -131,7 +145,7 @@ program.action(async () => {
     watch: opts.watch !== false,
     directory: dir,
     collectionName: opts.collection,
-  });
+  }, saved);
   await mcpCommand(config);
 });
 

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 
 export interface Config {
   ollamaUrl: string;
@@ -150,7 +151,40 @@ const defaults: Config = {
   ],
 };
 
-export function resolveConfig(overrides: Partial<Config> = {}): Config {
+const CONFIG_DIR = path.join(process.env.HOME ?? "~", ".codebase-indexer");
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+export interface SavedConfig {
+  ollamaUrl?: string;
+  qdrantUrl?: string;
+  model?: string;
+  embeddingDim?: number;
+  collectionName?: string;
+}
+
+export async function loadSavedConfig(): Promise<SavedConfig> {
+  try {
+    const content = await readFile(CONFIG_FILE, "utf-8");
+    return JSON.parse(content) as SavedConfig;
+  } catch {
+    return {};
+  }
+}
+
+export async function saveSavedConfig(config: SavedConfig): Promise<void> {
+  await mkdir(CONFIG_DIR, { recursive: true });
+  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", "utf-8");
+}
+
+export async function deleteSavedConfig(): Promise<void> {
+  try {
+    await rm(CONFIG_FILE);
+  } catch {
+    // File doesn't exist, ignore
+  }
+}
+
+export function resolveConfig(overrides: Partial<Config> = {}, savedConfig: SavedConfig = {}): Config {
   const envOverrides: Partial<Config> = {};
 
   if (process.env.OLLAMA_URL) envOverrides.ollamaUrl = process.env.OLLAMA_URL;
@@ -159,7 +193,7 @@ export function resolveConfig(overrides: Partial<Config> = {}): Config {
   if (process.env.EMBEDDING_DIM) envOverrides.embeddingDim = parseInt(process.env.EMBEDDING_DIM, 10);
   if (process.env.COLLECTION_NAME) envOverrides.collectionName = process.env.COLLECTION_NAME;
 
-  const result = { ...defaults, ...envOverrides, ...overrides };
+  const result = { ...defaults, ...savedConfig, ...envOverrides, ...overrides };
 
   // Auto-derive collection name from directory when using the default
   if (result.collectionName === "codebase" && result.directory !== ".") {

@@ -2,7 +2,14 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
+import { select, input, number } from "@inquirer/prompts";
 import type { Config } from "../config/config.js";
+import {
+  loadSavedConfig,
+  saveSavedConfig,
+  deleteSavedConfig,
+  type SavedConfig,
+} from "../config/config.js";
 import { Indexer } from "../core/indexer.js";
 import { createSpinner, formatProgress, printSearchResult, printStatus } from "./ui.js";
 import { printWelcome, printMascot } from "./mascot.js";
@@ -543,4 +550,90 @@ export async function mcpCommand(config: Config): Promise<void> {
   if (config.watch) log("File watching: enabled");
 
   await startMcpServer(config);
+}
+
+const DEFAULTS: SavedConfig = {
+  ollamaUrl: "http://localhost:11434",
+  qdrantUrl: "http://localhost:6333",
+  model: "qwen3-embedding:0.6b",
+  embeddingDim: 512,
+  collectionName: "codebase",
+};
+
+function printConfigTable(config: SavedConfig): void {
+  const heading = (text: string) => chalk.hex("#d97706").bold(text);
+  const val = (v: string | number | undefined, def: string | number) =>
+    v !== undefined && v !== def
+      ? chalk.green(String(v))
+      : chalk.dim(String(def));
+
+  console.log(heading("\n  Current Settings:"));
+  console.log(`    Ollama URL:          ${val(config.ollamaUrl, DEFAULTS.ollamaUrl!)}`);
+  console.log(`    Qdrant URL:          ${val(config.qdrantUrl, DEFAULTS.qdrantUrl!)}`);
+  console.log(`    Embedding Model:     ${val(config.model, DEFAULTS.model!)}`);
+  console.log(`    Embedding Dimension: ${val(config.embeddingDim, DEFAULTS.embeddingDim!)}`);
+  console.log(`    Collection Name:     ${val(config.collectionName, DEFAULTS.collectionName!)}`);
+  console.log();
+}
+
+type ConfigField = "ollamaUrl" | "qdrantUrl" | "model" | "embeddingDim" | "collectionName";
+
+export async function configCommand(): Promise<void> {
+  printMascot("welcome", "Settings");
+
+  let saved = await loadSavedConfig();
+  printConfigTable({ ...DEFAULTS, ...saved });
+
+  const fieldLabels: Record<ConfigField, string> = {
+    ollamaUrl: "Ollama URL",
+    qdrantUrl: "Qdrant URL",
+    model: "Embedding Model",
+    embeddingDim: "Embedding Dimension",
+    collectionName: "Collection Name",
+  };
+
+  let running = true;
+  while (running) {
+    const merged = { ...DEFAULTS, ...saved };
+
+    const choice = await select({
+      message: "Select a setting to edit:",
+      choices: [
+        { name: `Ollama URL          ${chalk.dim(`(${merged.ollamaUrl})`)}`, value: "ollamaUrl" as const },
+        { name: `Qdrant URL          ${chalk.dim(`(${merged.qdrantUrl})`)}`, value: "qdrantUrl" as const },
+        { name: `Embedding Model     ${chalk.dim(`(${merged.model})`)}`, value: "model" as const },
+        { name: `Embedding Dimension ${chalk.dim(`(${merged.embeddingDim})`)}`, value: "embeddingDim" as const },
+        { name: `Collection Name     ${chalk.dim(`(${merged.collectionName})`)}`, value: "collectionName" as const },
+        { name: chalk.green("← Save & Exit"), value: "save" as const },
+        { name: chalk.yellow("Reset to Defaults"), value: "reset" as const },
+      ],
+    });
+
+    if (choice === "save") {
+      await saveSavedConfig(saved);
+      printMascot("success", "Settings saved!");
+      running = false;
+    } else if (choice === "reset") {
+      await deleteSavedConfig();
+      saved = {};
+      console.log(chalk.yellow("\n  Config reset to defaults.\n"));
+      printConfigTable(DEFAULTS);
+    } else if (choice === "embeddingDim") {
+      const value = await number({
+        message: `${fieldLabels[choice]}:`,
+        default: merged.embeddingDim,
+      });
+      if (value !== undefined) {
+        saved.embeddingDim = value;
+      }
+    } else {
+      const value = await input({
+        message: `${fieldLabels[choice]}:`,
+        default: merged[choice] as string,
+      });
+      if (value) {
+        saved[choice] = value;
+      }
+    }
+  }
 }
