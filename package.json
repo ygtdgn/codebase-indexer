@@ -1,0 +1,34 @@
+{
+  "name": "codebase-indexer",
+  "version": "1.0.0",
+  "description": "Semantic codebase indexer with Ollama + Qdrant, MCP server for Claude Code",
+  "type": "module",
+  "bin": {
+    "codebase-indexer": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docker"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@qdrant/js-client-rest": "^1.13.0",
+    "chalk": "^5.4.1",
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "glob": "^11.0.1",
+    "ignore": "^7.0.3",
+    "ora": "^8.2.0",
+    "p-limit": "^6.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
