@@ -5,10 +5,13 @@ import { execSync } from "node:child_process";
 import type { Config } from "../config/config.js";
 import { Indexer } from "../core/indexer.js";
 import { createSpinner, formatProgress, printSearchResult, printStatus } from "./ui.js";
+import { printWelcome, printMascot } from "./mascot.js";
 import { startMcpServer } from "../mcp/server.js";
 import chalk from "chalk";
 
 export async function initCommand(config: Config): Promise<void> {
+  printWelcome();
+
   const spinner = createSpinner("Setting up Qdrant...");
   spinner.start();
 
@@ -142,6 +145,7 @@ export async function indexCommand(
     spinner.succeed(
       `Indexed ${progress.processedFiles} files (${progress.totalChunks} chunks, ${progress.skippedFiles} skipped)`,
     );
+    printMascot("success", "All done!");
 
     if (options.setupClaude) {
       await writeClaude(absDir, config, options.setupGlobally === true);
@@ -153,6 +157,7 @@ export async function indexCommand(
     spinner.fail(
       `Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
     );
+    printMascot("error", "Something went wrong...");
     process.exit(1);
   }
 }

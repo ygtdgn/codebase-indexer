@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createInterface } from "node:readline/promises";
+import { checkbox } from "@inquirer/prompts";
 import { Command } from "commander";
 import { resolveConfig } from "./config/config.js";
 import {
@@ -167,52 +167,18 @@ async function promptSetupTargets(): Promise<SetupTarget[]> {
     return ["claude", "codex"];
   }
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
+  const answers = await checkbox<SetupTarget>({
+    message: "Select setup targets:",
+    choices: [
+      { name: "Claude  — CLAUDE.md + .mcp.json", value: "claude" as const, checked: true },
+      { name: "Codex   — AGENTS.md + .codex/config.toml", value: "codex" as const, checked: true },
+    ],
   });
 
-  try {
-    console.log("\nSetup targets:");
-    console.log("  1) Claude");
-    console.log("  2) Codex");
-    console.log("  3) Claude + Codex");
-
-    const answer = (await rl.question("Select target(s) [3]: ")).trim();
-    const normalized = answer === "" ? "3" : answer.toLowerCase();
-
-    if (normalized === "1" || normalized === "claude") {
-      return ["claude"];
-    }
-    if (normalized === "2" || normalized === "codex") {
-      return ["codex"];
-    }
-    if (
-      normalized === "3"
-      || normalized === "both"
-      || normalized === "all"
-      || normalized === "claude,codex"
-      || normalized === "codex,claude"
-    ) {
-      return ["claude", "codex"];
-    }
-
-    const parts = normalized.split(",").map((part) => part.trim()).filter(Boolean);
-    const selected = new Set<SetupTarget>();
-    for (const part of parts) {
-      if (part === "1" || part === "claude") selected.add("claude");
-      if (part === "2" || part === "codex") selected.add("codex");
-    }
-
-    if (selected.size === 0) {
-      console.log("Invalid selection; defaulting to Claude + Codex.");
-      return ["claude", "codex"];
-    }
-
-    return Array.from(selected);
-  } finally {
-    rl.close();
+  if (answers.length === 0) {
+    return ["claude", "codex"];
   }
+  return answers;
 }
 
 program.parse();

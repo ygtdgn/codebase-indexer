@@ -27,14 +27,14 @@ export function printSearchResult(
   },
   index: number,
 ): void {
-  const score = chalk.yellow(`${result.score.toFixed(4)}`);
-  const file = chalk.cyan(result.filePath);
+  const score = chalk.hex("#d97706")(`${result.score.toFixed(4)}`);
+  const file = chalk.hex("#ea580c")(result.filePath);
   const lines = chalk.dim(`L${result.startLine}-L${result.endLine}`);
-  const lang = chalk.magenta(result.language);
-  const symbol = result.symbolName ? chalk.green(` [${result.symbolName}]`) : "";
+  const lang = chalk.hex("#b45309")(result.language);
+  const symbol = result.symbolName ? chalk.hex("#16a34a")(` [${result.symbolName}]`) : "";
 
   console.log(`\n${chalk.bold(`#${index + 1}`)} ${score} ${file}:${lines} ${lang}${symbol}`);
-  console.log(chalk.dim("─".repeat(60)));
+  console.log(chalk.hex("#d97706")("\u2500".repeat(60)));
 
   // Show first 10 lines of content
   const contentLines = result.content.split("\n");
@@ -53,20 +53,22 @@ export function printStatus(
   const check = chalk.green("✓");
   const cross = chalk.red("✗");
 
-  console.log(chalk.bold("\nService Status:"));
+  const heading = (text: string) => chalk.hex("#d97706").bold(text);
+
+  console.log(heading("\nService Status:"));
   console.log(`  Ollama:  ${health.ollama ? check : cross} ${config.ollamaUrl}`);
   console.log(`  Qdrant:  ${health.qdrant ? check : cross} ${config.qdrantUrl}`);
 
-  console.log(chalk.bold("\nConfiguration:"));
+  console.log(heading("\nConfiguration:"));
   console.log(`  Model:         ${config.model}`);
   console.log(`  Embedding Dim: ${config.embeddingDim}`);
 
-  console.log(chalk.bold("\nIndex Stats:"));
+  console.log(heading("\nIndex Stats:"));
   console.log(`  Total Chunks:  ${stats.totalPoints}`);
   console.log(`  Collections:   ${stats.collections.join(", ") || "none"}`);
 
   if (health.models.length > 0) {
-    console.log(chalk.bold("\nAvailable Models:"));
+    console.log(heading("\nAvailable Models:"));
     for (const model of health.models) {
       console.log(`  - ${model}`);
     }
