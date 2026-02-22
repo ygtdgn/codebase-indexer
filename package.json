@@ -1,6 +1,6 @@
 {
   "name": "codebase-indexer",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Semantic codebase indexer with Ollama + Qdrant, MCP server for Claude Code",
   "type": "module",
   "bin": {
