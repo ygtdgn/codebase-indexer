@@ -110,6 +110,36 @@ echo ""
 
 }
 
+detect_lan_ip() {
+
+local ip=""
+
+case "$(uname -s)" in
+
+Darwin)
+
+ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)
+
+;;
+
+Linux)
+
+ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+
+;;
+
+esac
+
+if [ -z "$ip" ]; then
+
+ip="<YOUR_SERVER_IP>"
+
+fi
+
+echo "$ip"
+
+}
+
 info()    { echo -e "${CYAN}ℹ${RESET}  $1"; }
 
 success() { echo -e "${GREEN}✔${RESET}  $1"; }
@@ -122,27 +152,35 @@ fail()    { echo -e "${RED}✖${RESET}  $1"; }
 
 print_banner
 
-# ── 2. Service location ─────────────────────────────────────
+# ── 2. Setup type ────────────────────────────────────────────
 
-echo -e "${BOLD}🖥️  Where are your services (Ollama & Qdrant) running?${RESET}"
+echo -e "${BOLD}🖥️  What would you like to set up on this machine?${RESET}"
 
-echo "   1) On this machine (local setup)"
+echo "   1) Full setup (services + indexing on this machine)"
 
-echo "   2) On a remote machine (I'll provide URLs)"
+echo "   2) Server only (run Ollama & Qdrant, expose to network)"
+
+echo "   3) Client only (index project, connect to remote services)"
 
 echo -en "   > "
 
-prompt_read SERVICE_LOCATION
+prompt_read SETUP_CHOICE
 
-SERVICE_LOCATION="${SERVICE_LOCATION:-1}"
+SETUP_CHOICE="${SETUP_CHOICE:-1}"
 
-REMOTE_MODE=false
+SETUP_TYPE="local"
 
-if [ "$SERVICE_LOCATION" = "2" ]; then
+case "$SETUP_CHOICE" in
 
-REMOTE_MODE=true
+1) SETUP_TYPE="local" ;;
 
-fi
+2) SETUP_TYPE="server" ;;
+
+3) SETUP_TYPE="client" ;;
+
+*) SETUP_TYPE="local" ;;
+
+esac
 
 echo ""
 
@@ -186,9 +224,9 @@ MISSING=1
 
 fi
 
-# Docker & Ollama checks — only for local mode
+# Docker & Ollama checks — only for local and server modes
 
-if ! $REMOTE_MODE; then
+if [ "$SETUP_TYPE" != "client" ]; then
 
 # Docker
 
@@ -236,7 +274,7 @@ fi
 
 else
 
-info "Skipping Docker & Ollama checks (remote mode)"
+info "Skipping Docker & Ollama checks (client mode)"
 
 fi
 
@@ -264,13 +302,13 @@ echo ""
 
 fi
 
-# ── 3b. Remote URLs (only for remote mode) ──────────────────
+# ── 3b. Remote URLs (client mode only) ──────────────────────
 
 REMOTE_OLLAMA_URL=""
 
 REMOTE_QDRANT_URL=""
 
-if $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "client" ]; then
 
 echo -e "${BOLD}🌐 Enter your remote service URLs${RESET}"
 
@@ -308,7 +346,53 @@ echo ""
 
 fi
 
-# ── 3. Interactive questions ─────────────────────────────────
+# ── 3c. Server mode: security warning ───────────────────────
+
+if [ "$SETUP_TYPE" = "server" ]; then
+
+echo -e "${YELLOW}╭─────────────────────────────────────────────────────────────╮${RESET}"
+
+echo -e "${YELLOW}│  ${BOLD}⚠  Security Warning${RESET}${YELLOW}                                         │${RESET}"
+
+echo -e "${YELLOW}│                                                             │${RESET}"
+
+echo -e "${YELLOW}│  Server mode exposes Ollama and Qdrant to your network.     │${RESET}"
+
+echo -e "${YELLOW}│                                                             │${RESET}"
+
+echo -e "${YELLOW}│  • Only use on trusted networks (home/office LAN)           │${RESET}"
+
+echo -e "${YELLOW}│  • Do NOT expose to the public internet                     │${RESET}"
+
+echo -e "${YELLOW}│  • Consider firewall rules to restrict access               │${RESET}"
+
+echo -e "${YELLOW}│  • Qdrant and Ollama have no built-in authentication        │${RESET}"
+
+echo -e "${YELLOW}╰─────────────────────────────────────────────────────────────╯${RESET}"
+
+echo ""
+
+echo -en "Continue with server setup? (y/N) "
+
+prompt_read SERVER_CONTINUE
+
+if [[ ! "$SERVER_CONTINUE" =~ ^[Yy]$ ]]; then
+
+echo ""
+
+fail "Server setup cancelled."
+
+exit 1
+
+fi
+
+echo ""
+
+fi
+
+# ── 4. Interactive questions (local & client only) ───────────
+
+if [ "$SETUP_TYPE" != "server" ]; then
 
 # Q1: Directory to index
 
@@ -402,9 +486,9 @@ COLLECTION_NAME=""
 
 CUSTOM_CONFIG=false
 
-# Pre-fill URLs from remote mode
+# Pre-fill URLs from client mode
 
-if $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "client" ]; then
 
 OLLAMA_URL="$REMOTE_OLLAMA_URL"
 
@@ -416,7 +500,7 @@ fi
 
 echo -e "${BOLD}⚙️  Do you want to customize connection settings?${RESET} ${DIM}(y/N)${RESET}"
 
-if $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "client" ]; then
 
 echo -e "   ${DIM}(Ollama & Qdrant URLs are already set from remote config)${RESET}"
 
@@ -436,7 +520,7 @@ echo -e "   ${DIM}Press Enter to keep the default value.${RESET}"
 
 echo ""
 
-if ! $REMOTE_MODE; then
+if [ "$SETUP_TYPE" != "client" ]; then
 
 echo -en "   Ollama URL ${DIM}(default: http://localhost:11434)${RESET}: "
 
@@ -480,7 +564,33 @@ echo ""
 
 fi
 
-# ── 4. Build command flags ───────────────────────────────────
+else
+
+# Server mode: initialize variables to defaults
+
+INDEX_DIR=""
+
+SETUP_CLAUDE=false
+
+SETUP_CODEX=false
+
+SETUP_GLOBALLY=false
+
+CUSTOM_CONFIG=false
+
+OLLAMA_URL=""
+
+QDRANT_URL=""
+
+EMBEDDING_MODEL=""
+
+EMBEDDING_DIM=""
+
+COLLECTION_NAME=""
+
+fi
+
+# ── 5. Build command flags ───────────────────────────────────
 
 INIT_FLAGS=""
 
@@ -542,11 +652,19 @@ INDEX_FLAGS="$INDEX_FLAGS --setup-globally"
 
 fi
 
-# ── 5. Run init (local mode only) ────────────────────────────
+# ── 6. Run init (local & server modes) ──────────────────────
 
-if ! $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "local" ] || [ "$SETUP_TYPE" = "server" ]; then
+
+if [ "$SETUP_TYPE" = "server" ]; then
+
+echo -e "${BOLD}Step 1/1:${RESET} Setting up Qdrant & checking Ollama..."
+
+else
 
 echo -e "${BOLD}Step 1/2:${RESET} Setting up Qdrant & checking Ollama..."
+
+fi
 
 echo -e "${DIM}  → npx codebase-indexer init${INIT_FLAGS}${RESET}"
 
@@ -560,9 +678,121 @@ echo ""
 
 fi
 
-# ── 6. Run index ─────────────────────────────────────────────
+# ── 6b. Server mode: Ollama network check & connection info ──
 
-if $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "server" ]; then
+
+LAN_IP=$(detect_lan_ip)
+
+echo -e "${BOLD}Checking Ollama network accessibility...${RESET}"
+
+echo ""
+
+OLLAMA_LAN_OK=false
+
+if curl -sf "http://${LAN_IP}:11434/api/tags" --connect-timeout 3 &>/dev/null; then
+
+success "Ollama is accessible on the network (${LAN_IP}:11434)"
+
+OLLAMA_LAN_OK=true
+
+else
+
+warn "Ollama is NOT accessible on ${LAN_IP}:11434"
+
+echo ""
+
+echo -e "  Ollama binds to localhost by default. To expose it to the network:"
+
+echo ""
+
+echo -e "  ${BOLD}Option A: macOS / manual start${RESET}"
+
+echo -e "  ${DIM}  OLLAMA_HOST=0.0.0.0 ollama serve${RESET}"
+
+echo ""
+
+echo -e "  ${BOLD}Option B: Linux systemd service${RESET}"
+
+echo -e "  ${DIM}  sudo systemctl edit ollama${RESET}"
+
+echo -e "  ${DIM}  # Add under [Service]:${RESET}"
+
+echo -e "  ${DIM}  Environment=\"OLLAMA_HOST=0.0.0.0\"${RESET}"
+
+echo -e "  ${DIM}  sudo systemctl restart ollama${RESET}"
+
+echo ""
+
+echo -en "Press Enter after restarting Ollama (or 's' to skip): "
+
+prompt_read OLLAMA_RETRY
+
+if [[ ! "$OLLAMA_RETRY" =~ ^[Ss]$ ]]; then
+
+if curl -sf "http://${LAN_IP}:11434/api/tags" --connect-timeout 3 &>/dev/null; then
+
+success "Ollama is now accessible on the network"
+
+OLLAMA_LAN_OK=true
+
+else
+
+warn "Ollama still not reachable on ${LAN_IP}:11434. You may need to configure it manually."
+
+fi
+
+fi
+
+fi
+
+echo ""
+
+# Connection info box
+
+echo -e "${GREEN}╭─────────────────────────────────────────────────────────────╮${RESET}"
+
+echo -e "${GREEN}│  ${BOLD}Server Ready${RESET}${GREEN}                                                │${RESET}"
+
+echo -e "${GREEN}│                                                             │${RESET}"
+
+echo -e "${GREEN}│  Your services are available at:                            │${RESET}"
+
+echo -e "${GREEN}│                                                             │${RESET}"
+
+# shellcheck disable=SC2059
+
+printf "${GREEN}│  Ollama:  ${RESET}${BOLD}http://%-43s${RESET}${GREEN}│${RESET}\n" "${LAN_IP}:11434"
+
+# shellcheck disable=SC2059
+
+printf "${GREEN}│  Qdrant:  ${RESET}${BOLD}http://%-43s${RESET}${GREEN}│${RESET}\n" "${LAN_IP}:6333"
+
+echo -e "${GREEN}│                                                             │${RESET}"
+
+if ! $OLLAMA_LAN_OK; then
+
+echo -e "${GREEN}│  ${YELLOW}⚠ Ollama may need OLLAMA_HOST=0.0.0.0 to be reachable${RESET}     ${GREEN}│${RESET}"
+
+echo -e "${GREEN}│                                                             │${RESET}"
+
+fi
+
+echo -e "${GREEN}│  On your client machine, run the installer and choose       │${RESET}"
+
+echo -e "${GREEN}│  option ${BOLD}3) Client only${RESET}${GREEN}, then enter these URLs.             │${RESET}"
+
+echo -e "${GREEN}╰─────────────────────────────────────────────────────────────╯${RESET}"
+
+echo ""
+
+fi
+
+# ── 7. Run index (local & client modes) ─────────────────────
+
+if [ "$SETUP_TYPE" != "server" ]; then
+
+if [ "$SETUP_TYPE" = "client" ]; then
 
 echo -e "${BOLD}Step 1/1:${RESET} Indexing ${INDEX_DIR}..."
 
@@ -582,9 +812,11 @@ npx codebase-indexer index "$INDEX_DIR" $INDEX_FLAGS
 
 echo ""
 
-# ── 7. Save custom config if provided ────────────────────────
+fi
 
-if $CUSTOM_CONFIG; then
+# ── 8. Save custom config if provided ────────────────────────
+
+if [ "$SETUP_TYPE" != "server" ] && $CUSTOM_CONFIG; then
 
 CONFIG_DIR="${HOME}/.codebase-indexer"
 
@@ -652,7 +884,43 @@ fi
 
 fi
 
-# ── 8. Summary ───────────────────────────────────────────────
+# ── 9. Summary ───────────────────────────────────────────────
+
+if [ "$SETUP_TYPE" = "server" ]; then
+
+print_mascot "success" "Server is ready!"
+
+echo -e "${BOLD}  Setup Summary${RESET}"
+
+echo -e "  ─────────────────────────────────────────"
+
+echo -e "  Mode:          ${CYAN}Server${RESET}"
+
+echo -e "  Ollama URL:    ${GREEN}http://${LAN_IP}:11434${RESET}"
+
+echo -e "  Qdrant URL:    ${GREEN}http://${LAN_IP}:6333${RESET}"
+
+echo -e "  ─────────────────────────────────────────"
+
+echo ""
+
+echo -e "${BOLD}  Next Steps${RESET}"
+
+echo -e "  On your client machine, run:"
+
+echo -e "  ${DIM}bash <(curl -fsSL https://raw.githubusercontent.com/ygtdgn/codebase-indexer/main/install.sh)${RESET}"
+
+echo ""
+
+echo -e "  Choose option ${BOLD}3) Client only${RESET} and enter:"
+
+echo -e "    Ollama URL: ${BOLD}http://${LAN_IP}:11434${RESET}"
+
+echo -e "    Qdrant URL: ${BOLD}http://${LAN_IP}:6333${RESET}"
+
+echo ""
+
+else
 
 print_mascot "success" "All done! Your codebase is indexed."
 
@@ -660,9 +928,9 @@ echo -e "${BOLD}  Setup Summary${RESET}"
 
 echo -e "  ─────────────────────────────────────────"
 
-if $REMOTE_MODE; then
+if [ "$SETUP_TYPE" = "client" ]; then
 
-echo -e "  Mode:          ${CYAN}Remote${RESET}"
+echo -e "  Mode:          ${CYAN}Client (remote services)${RESET}"
 
 else
 
@@ -709,3 +977,5 @@ echo -e "  ${DIM}npx codebase-indexer status${RESET}                 Check servi
 echo -e "  ${DIM}npx codebase-indexer config${RESET}                 Edit settings"
 
 echo ""
+
+fi
