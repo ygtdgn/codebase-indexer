@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codebase-indexer": {
+      "command": "npx",
+      "args": [
+        "codebase-indexer",
+        "--dir",
+        "/Users/yigitdogan/Documents/GitHub/codebase-indexer"
+      ]
+    }
+  }
+}

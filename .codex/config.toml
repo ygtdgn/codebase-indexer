@@ -1,0 +1,4 @@
+[mcp_servers.codebase-indexer]
+command = "npx"
+args = ["codebase-indexer", "--dir", "/Users/yigitdogan/Documents/GitHub/codebase-indexer"]
+cwd = "/Users/yigitdogan/Documents/GitHub/codebase-indexer"

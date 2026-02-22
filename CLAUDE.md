@@ -15,7 +15,11 @@ npm start              # node dist/index.js
 
 # CLI commands
 node dist/index.js init                          # Start Qdrant Docker + check Ollama
-node dist/index.js index ./path --setup-claude   # Index a directory (--setup-claude writes MCP docs to target's CLAUDE.md)
+node dist/index.js index ./path --setup-claude                 # Index + write CLAUDE.md and .mcp.json
+node dist/index.js index ./path --setup-codex                  # Index + write AGENTS.md and .codex/config.toml
+node dist/index.js index ./path --setup-claude --setup-codex   # Configure both
+node dist/index.js index ./path --setup                         # Interactive setup selection (Claude/Codex)
+node dist/index.js index ./path --setup --setup-globally       # Global MCP setup (~/.claude.json, ~/.codex/config.toml)
 node dist/index.js search "query" -k 5           # Semantic search
 node dist/index.js status                        # Health check
 node dist/index.js --dir ./path                  # Start MCP server (default mode, no subcommand)
@@ -55,7 +59,7 @@ index.ts (CLI entry, commander.js)
 - **`core/vectorstore.ts`**: Qdrant operations. Creates payload indices on `file_path`, `language`, `chunk_type` for filtered search. Uses `@qdrant/js-client-rest`.
 - **`mcp/server.ts`**: Uses `@modelcontextprotocol/sdk`. Zod schemas for tool params (via `z` imported from the SDK). Five tools: `search_code`, `index_file`, `index_directory`, `get_index_status`, `delete_file`.
 - **`utils/files.ts`**: `discoverFiles()` uses glob + `ignore` library for .gitignore support. `getLanguageFromExtension()` maps 70+ extensions.
-- **`cli/commands.ts`**: The `--setup-claude` flag on `index` command writes MCP usage instructions into the target project's CLAUDE.md, wrapped in HTML comment markers for idempotent updates.
+- **`cli/commands.ts`**: The setup flags on `index` (`--setup-claude`, `--setup-codex`, `--setup`, `--setup-globally`) write assistant usage guidance into `CLAUDE.md`/`AGENTS.md` and upsert MCP configs in local or global scope.
 
 ## Conventions
 

@@ -108,7 +108,7 @@ volumes:
 export async function indexCommand(
   directory: string,
   config: Config,
-  options: { setupClaude?: boolean } = {},
+  options: { setupClaude?: boolean; setupCodex?: boolean; setupGlobally?: boolean } = {},
 ): Promise<void> {
   const absDir = path.resolve(directory);
   if (!existsSync(absDir)) {
@@ -134,7 +134,10 @@ export async function indexCommand(
     );
 
     if (options.setupClaude) {
-      await writeClaude(absDir, config);
+      await writeClaude(absDir, config, options.setupGlobally === true);
+    }
+    if (options.setupCodex) {
+      await writeCodex(absDir, config, options.setupGlobally === true);
     }
   } catch (error) {
     spinner.fail(
@@ -146,6 +149,8 @@ export async function indexCommand(
 
 const CLAUDE_MD_SECTION_START = "<!-- codebase-indexer:start -->";
 const CLAUDE_MD_SECTION_END = "<!-- codebase-indexer:end -->";
+const AGENTS_MD_SECTION_START = "<!-- codebase-indexer-codex:start -->";
+const AGENTS_MD_SECTION_END = "<!-- codebase-indexer-codex:end -->";
 
 function generateClaudeMdSection(config: Config): string {
   return `${CLAUDE_MD_SECTION_START}
@@ -187,30 +192,271 @@ This project has a semantic code search index powered by Ollama embeddings and Q
 ${CLAUDE_MD_SECTION_END}`;
 }
 
-async function writeClaude(directory: string, config: Config): Promise<void> {
-  const claudePath = path.join(directory, "CLAUDE.md");
-  const newSection = generateClaudeMdSection(config);
+function generateAgentsMdSection(config: Config): string {
+  return `${AGENTS_MD_SECTION_START}
+## Codebase Semantic Search (MCP: codebase-indexer)
 
+This repository has semantic code search exposed through an MCP server.
+
+### When to use in Codex
+
+- Start with \`search_code\` before broad text grep when you need concept-level matches.
+- Use \`search_code\` to find similar implementations before adding a new feature.
+- Use \`index_file\` after major edits if you need immediate search freshness.
+- Use \`index_directory\` when results look stale across multiple files.
+
+### MCP tools
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| \`search_code\` | Semantic search | \`search_code({query: "retry logic for API client", top_k: 5})\` |
+| \`index_file\` | Re-index one file | \`index_file({path: "src/api/client.ts"})\` |
+| \`index_directory\` | Re-index the project | \`index_directory({})\` |
+| \`get_index_status\` | Health/status check | \`get_index_status({})\` |
+| \`delete_file\` | Remove deleted file from index | \`delete_file({path: "src/old.ts"})\` |
+
+### Configuration
+
+- Ollama: \`${config.ollamaUrl}\`
+- Qdrant: \`${config.qdrantUrl}\`
+- Model: \`${config.model}\` (dim: ${config.embeddingDim})
+- Collection: \`${config.collectionName}\`
+${AGENTS_MD_SECTION_END}`;
+}
+
+async function writeClaude(directory: string, config: Config, globally: boolean): Promise<void> {
+  const claudePath = path.join(directory, "CLAUDE.md");
+  await upsertMarkdownSection(
+    claudePath,
+    generateClaudeMdSection(config),
+    CLAUDE_MD_SECTION_START,
+    CLAUDE_MD_SECTION_END,
+  );
+  console.log(chalk.green(`  CLAUDE.md updated: ${claudePath}`));
+
+  if (globally) {
+    await writeClaudeGlobalConfig(directory, config);
+  } else {
+    await writeMcpConfig(directory, config);
+  }
+}
+
+async function writeCodex(directory: string, config: Config, globally: boolean): Promise<void> {
+  const agentsPath = path.join(directory, "AGENTS.md");
+  await upsertMarkdownSection(
+    agentsPath,
+    generateAgentsMdSection(config),
+    AGENTS_MD_SECTION_START,
+    AGENTS_MD_SECTION_END,
+  );
+  console.log(chalk.green(`  AGENTS.md updated: ${agentsPath}`));
+
+  await writeCodexConfig(directory, config, globally);
+}
+
+async function upsertMarkdownSection(
+  filePath: string,
+  newSection: string,
+  sectionStart: string,
+  sectionEnd: string,
+): Promise<void> {
   let content = "";
   try {
-    content = await readFile(claudePath, "utf-8");
+    content = await readFile(filePath, "utf-8");
   } catch {
     // File doesn't exist yet
   }
 
-  if (content.includes(CLAUDE_MD_SECTION_START)) {
-    // Replace existing section
+  if (content.includes(sectionStart)) {
     const regex = new RegExp(
-      `${escapeRegex(CLAUDE_MD_SECTION_START)}[\\s\\S]*?${escapeRegex(CLAUDE_MD_SECTION_END)}`,
+      `${escapeRegex(sectionStart)}[\\s\\S]*?${escapeRegex(sectionEnd)}`,
     );
     content = content.replace(regex, newSection);
   } else {
-    // Append to end
     content = content ? `${content.trimEnd()}\n\n${newSection}\n` : `${newSection}\n`;
   }
 
-  await writeFile(claudePath, content, "utf-8");
-  console.log(chalk.green(`  CLAUDE.md updated: ${claudePath}`));
+  await writeFile(filePath, content, "utf-8");
+}
+
+interface McpConfig {
+  mcpServers: Record<string, {
+    command: string;
+    args: string[];
+    env?: Record<string, string>;
+  }>;
+}
+
+interface ClaudeGlobalConfig {
+  mcpServers?: Record<string, {
+    type?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+async function writeMcpConfig(directory: string, config: Config): Promise<void> {
+  const mcpPath = path.join(directory, ".mcp.json");
+  const args = buildMcpArgs(directory, config);
+
+  // Read existing .mcp.json or start fresh
+  let mcpConfig: McpConfig = { mcpServers: {} };
+  try {
+    const existing = await readFile(mcpPath, "utf-8");
+    mcpConfig = JSON.parse(existing) as McpConfig;
+    if (!mcpConfig.mcpServers) {
+      mcpConfig.mcpServers = {};
+    }
+  } catch {
+    // File doesn't exist or invalid JSON
+  }
+
+  // Add/update our server entry
+  mcpConfig.mcpServers["codebase-indexer"] = {
+    command: "npx",
+    args,
+  };
+
+  await writeFile(mcpPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf-8");
+  console.log(chalk.green(`  .mcp.json updated: ${mcpPath}`));
+}
+
+async function writeClaudeGlobalConfig(directory: string, config: Config): Promise<void> {
+  const homeDir = getHomeDirectory();
+  const claudeGlobalPath = path.join(homeDir, ".claude.json");
+  const args = buildMcpArgs(directory, config);
+
+  let claudeConfig: ClaudeGlobalConfig = {};
+  try {
+    const existing = await readFile(claudeGlobalPath, "utf-8");
+    claudeConfig = JSON.parse(existing) as ClaudeGlobalConfig;
+  } catch {
+    // File doesn't exist or invalid JSON
+  }
+
+  if (!claudeConfig.mcpServers || typeof claudeConfig.mcpServers !== "object") {
+    claudeConfig.mcpServers = {};
+  }
+
+  claudeConfig.mcpServers["codebase-indexer"] = {
+    type: "stdio",
+    command: "npx",
+    args,
+    env: {},
+  };
+
+  await writeFile(claudeGlobalPath, JSON.stringify(claudeConfig, null, 2) + "\n", "utf-8");
+  console.log(chalk.green(`  Claude global MCP updated: ${claudeGlobalPath}`));
+}
+
+async function writeCodexConfig(directory: string, config: Config, globally: boolean): Promise<void> {
+  const homeDir = getHomeDirectory();
+  const configPath = globally
+    ? path.join(homeDir, ".codex", "config.toml")
+    : path.join(directory, ".codex", "config.toml");
+  const absDir = path.resolve(directory);
+  const args = buildMcpArgs(directory, config);
+
+  await mkdir(path.dirname(configPath), { recursive: true });
+
+  let content = "";
+  try {
+    content = await readFile(configPath, "utf-8");
+  } catch {
+    // File doesn't exist yet
+  }
+
+  const newSection = `[mcp_servers.codebase-indexer]
+command = ${toTomlString("npx")}
+args = ${toTomlArray(args)}
+cwd = ${toTomlString(absDir)}
+`;
+
+  const updated = upsertTomlTable(content, "mcp_servers.codebase-indexer", newSection);
+  await writeFile(configPath, updated, "utf-8");
+  console.log(chalk.green(`  Codex MCP config updated: ${configPath}`));
+}
+
+function buildMcpArgs(directory: string, config: Config): string[] {
+  const absDir = path.resolve(directory);
+  const args = ["codebase-indexer", "--dir", absDir];
+
+  // Only include non-default flags so the config stays clean
+  if (config.ollamaUrl !== "http://localhost:11434") {
+    args.push("--ollama-url", config.ollamaUrl);
+  }
+  if (config.qdrantUrl !== "http://localhost:6333") {
+    args.push("--qdrant-url", config.qdrantUrl);
+  }
+  if (config.model !== "qwen3-embedding:0.6b") {
+    args.push("--model", config.model);
+  }
+  if (config.embeddingDim !== 512) {
+    args.push("--dim", String(config.embeddingDim));
+  }
+  if (config.collectionName !== "codebase") {
+    args.push("--collection", config.collectionName);
+  }
+
+  return args;
+}
+
+function getHomeDirectory(): string {
+  const homeDir = process.env.HOME ?? process.env.USERPROFILE;
+  if (!homeDir) {
+    throw new Error("Cannot determine home directory for global setup");
+  }
+  return homeDir;
+}
+
+function parseTomlTableHeader(line: string): string | null {
+  const match = line.match(/^\s*\[([^\]]+)\]\s*$/);
+  return match ? match[1].trim() : null;
+}
+
+function upsertTomlTable(content: string, tablePrefix: string, newSection: string): string {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const kept: string[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const tableName = parseTomlTableHeader(lines[i]);
+    if (tableName === tablePrefix || tableName?.startsWith(`${tablePrefix}.`)) {
+      i += 1;
+      while (i < lines.length) {
+        const nextTable = parseTomlTableHeader(lines[i]);
+        if (nextTable) break;
+        i += 1;
+      }
+
+      while (kept.length > 0 && kept[kept.length - 1].trim() === "") {
+        kept.pop();
+      }
+      continue;
+    }
+
+    kept.push(lines[i]);
+    i += 1;
+  }
+
+  while (kept.length > 0 && kept[kept.length - 1].trim() === "") {
+    kept.pop();
+  }
+
+  const prefix = kept.length > 0 ? `${kept.join("\n").trimEnd()}\n\n` : "";
+  return `${prefix}${newSection.trimEnd()}\n`;
+}
+
+function toTomlString(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function toTomlArray(values: string[]): string {
+  return `[${values.map((value) => toTomlString(value)).join(", ")}]`;
 }
 
 function escapeRegex(str: string): string {
