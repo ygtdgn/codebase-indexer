@@ -22,6 +22,14 @@ interface IndexCommandOptions {
   force?: boolean;
 }
 
+function parseOptionalInt(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
 const program = new Command();
 
 program
@@ -30,12 +38,12 @@ program
     "Semantic codebase indexer with Ollama + Qdrant, MCP server for Claude Code and Codex",
   )
   .version("1.0.0")
-  .option("--ollama-url <url>", "Ollama API URL", "http://localhost:11434")
-  .option("--qdrant-url <url>", "Qdrant API URL", "http://localhost:6333")
-  .option("--model <name>", "Embedding model name", "qwen3-embedding:0.6b")
-  .option("--dim <number>", "Embedding dimension", "512")
+  .option("--ollama-url <url>", "Ollama API URL")
+  .option("--qdrant-url <url>", "Qdrant API URL")
+  .option("--model <name>", "Embedding model name")
+  .option("--dim <number>", "Embedding dimension")
   .option("--dir <path>", "Directory to index/watch")
-  .option("--collection <name>", "Qdrant collection name", "codebase")
+  .option("--collection <name>", "Qdrant collection name")
   .option("--no-watch", "Disable file watching in MCP mode");
 
 // Init command
@@ -49,7 +57,7 @@ program
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
-      embeddingDim: parseInt(opts.dim, 10),
+      embeddingDim: parseOptionalInt(opts.dim),
       collectionName: opts.collection,
     }, saved);
     await initCommand(config);
@@ -76,7 +84,7 @@ program
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
-      embeddingDim: parseInt(opts.dim, 10),
+      embeddingDim: parseOptionalInt(opts.dim),
       collectionName: opts.collection,
       directory: dir,
     }, saved);
@@ -101,7 +109,7 @@ program
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
-      embeddingDim: parseInt(opts.dim, 10),
+      embeddingDim: parseOptionalInt(opts.dim),
       collectionName: opts.collection,
     }, saved);
     await searchCommand(query, parseInt(cmdOpts.topK, 10), cmdOpts.language, config);
@@ -118,7 +126,7 @@ program
       ollamaUrl: opts.ollamaUrl,
       qdrantUrl: opts.qdrantUrl,
       model: opts.model,
-      embeddingDim: parseInt(opts.dim, 10),
+      embeddingDim: parseOptionalInt(opts.dim),
       collectionName: opts.collection,
     }, saved);
     await statusCommand(config);
@@ -141,7 +149,7 @@ program.action(async () => {
     ollamaUrl: opts.ollamaUrl,
     qdrantUrl: opts.qdrantUrl,
     model: opts.model,
-    embeddingDim: parseInt(opts.dim, 10),
+    embeddingDim: parseOptionalInt(opts.dim),
     watch: opts.watch !== false,
     directory: dir,
     collectionName: opts.collection,

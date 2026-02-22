@@ -1,4 +1,5 @@
 import path from "node:path";
+import { homedir } from "node:os";
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 
 export interface Config {
@@ -151,7 +152,7 @@ const defaults: Config = {
   ],
 };
 
-const CONFIG_DIR = path.join(process.env.HOME ?? "~", ".codebase-indexer");
+const CONFIG_DIR = path.join(process.env.HOME || homedir(), ".codebase-indexer");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 export interface SavedConfig {
@@ -184,6 +185,12 @@ export async function deleteSavedConfig(): Promise<void> {
   }
 }
 
+function stripUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
 export function resolveConfig(overrides: Partial<Config> = {}, savedConfig: SavedConfig = {}): Config {
   const envOverrides: Partial<Config> = {};
 
@@ -193,7 +200,12 @@ export function resolveConfig(overrides: Partial<Config> = {}, savedConfig: Save
   if (process.env.EMBEDDING_DIM) envOverrides.embeddingDim = parseInt(process.env.EMBEDDING_DIM, 10);
   if (process.env.COLLECTION_NAME) envOverrides.collectionName = process.env.COLLECTION_NAME;
 
-  const result = { ...defaults, ...savedConfig, ...envOverrides, ...overrides };
+  const result = {
+    ...defaults,
+    ...savedConfig,
+    ...stripUndefined(envOverrides),
+    ...stripUndefined(overrides),
+  };
 
   // Auto-derive collection name from directory when using the default
   if (result.collectionName === "codebase" && result.directory !== ".") {
