@@ -652,7 +652,79 @@ INDEX_FLAGS="$INDEX_FLAGS --setup-globally"
 
 fi
 
-# ── 6. Run init (local & server modes) ──────────────────────
+# ── 6. Save custom config (before running commands) ──────────
+
+if [ "$SETUP_TYPE" != "server" ] && $CUSTOM_CONFIG; then
+
+CONFIG_DIR="${HOME}/.codebase-indexer"
+
+CONFIG_FILE="${CONFIG_DIR}/config.json"
+
+mkdir -p "$CONFIG_DIR"
+
+# Build JSON — only include fields the user actually provided
+
+JSON="{"
+
+FIRST=true
+
+add_json_field() {
+
+local key="$1" value="$2"
+
+if [ -n "$value" ]; then
+
+if ! $FIRST; then JSON="$JSON,"; fi
+
+JSON="$JSON \"$key\": \"$value\""
+
+FIRST=false
+
+fi
+
+  }
+
+add_json_number() {
+
+local key="$1" value="$2"
+
+if [ -n "$value" ]; then
+
+if ! $FIRST; then JSON="$JSON,"; fi
+
+JSON="$JSON \"$key\": $value"
+
+FIRST=false
+
+fi
+
+  }
+
+add_json_field "ollamaUrl" "$OLLAMA_URL"
+
+add_json_field "qdrantUrl" "$QDRANT_URL"
+
+add_json_field "model" "$EMBEDDING_MODEL"
+
+add_json_number "embeddingDim" "$EMBEDDING_DIM"
+
+add_json_field "collectionName" "$COLLECTION_NAME"
+
+JSON="$JSON }"
+
+if [ "$JSON" != "{ }" ]; then
+
+echo "$JSON" > "$CONFIG_FILE"
+
+success "Custom config saved to ${CONFIG_FILE}"
+
+echo ""
+
+fi
+
+fi
+
+# ── 7. Run init (local & server modes) ──────────────────────
 
 if [ "$SETUP_TYPE" = "local" ] || [ "$SETUP_TYPE" = "server" ]; then
 
@@ -678,7 +750,7 @@ echo ""
 
 fi
 
-# ── 6b. Server mode: Ollama network check & connection info ──
+# ── 7b. Server mode: Ollama network check & connection info ──
 
 if [ "$SETUP_TYPE" = "server" ]; then
 
@@ -788,7 +860,7 @@ echo ""
 
 fi
 
-# ── 7. Run index (local & client modes) ─────────────────────
+# ── 8. Run index (local & client modes) ─────────────────────
 
 if [ "$SETUP_TYPE" != "server" ]; then
 
@@ -811,76 +883,6 @@ echo ""
 npx codebase-indexer index "$INDEX_DIR" $INDEX_FLAGS
 
 echo ""
-
-fi
-
-# ── 8. Save custom config if provided ────────────────────────
-
-if [ "$SETUP_TYPE" != "server" ] && $CUSTOM_CONFIG; then
-
-CONFIG_DIR="${HOME}/.codebase-indexer"
-
-CONFIG_FILE="${CONFIG_DIR}/config.json"
-
-mkdir -p "$CONFIG_DIR"
-
-# Build JSON — only include fields the user actually provided
-
-JSON="{"
-
-FIRST=true
-
-add_json_field() {
-
-local key="$1" value="$2"
-
-if [ -n "$value" ]; then
-
-if ! $FIRST; then JSON="$JSON,"; fi
-
-JSON="$JSON \"$key\": \"$value\""
-
-FIRST=false
-
-fi
-
-  }
-
-add_json_number() {
-
-local key="$1" value="$2"
-
-if [ -n "$value" ]; then
-
-if ! $FIRST; then JSON="$JSON,"; fi
-
-JSON="$JSON \"$key\": $value"
-
-FIRST=false
-
-fi
-
-  }
-
-add_json_field "ollamaUrl" "$OLLAMA_URL"
-
-add_json_field "qdrantUrl" "$QDRANT_URL"
-
-add_json_field "model" "$EMBEDDING_MODEL"
-
-add_json_number "embeddingDim" "$EMBEDDING_DIM"
-
-add_json_field "collectionName" "$COLLECTION_NAME"
-
-JSON="$JSON }"
-
-if [ "$JSON" != "{ }" ]; then
-
-echo "$JSON" > "$CONFIG_FILE"
-
-success "Custom config saved to ${CONFIG_FILE}"
-
-fi
 
 fi
 
